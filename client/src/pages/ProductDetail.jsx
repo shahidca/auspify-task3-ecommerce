@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,7 @@ import { useRecentlyViewed } from '../hooks/useRecentlyViewed';
 import Breadcrumbs from '../components/Breadcrumbs';
 import ShareButtons from '../components/ShareButtons';
 import ProductCard from '../components/ProductCard';
+import LoadingScreen from '../components/LoadingScreen';
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -25,14 +26,23 @@ export default function ProductDetail() {
   const [reviewStats, setReviewStats] = useState({ average: 0, count: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [slowServer, setSlowServer] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [adding, setAdding] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
   const [reviewSaving, setReviewSaving] = useState(false);
 
+  const slowTimerRef = useRef(null);
+
   const loadAll = async () => {
     setLoading(true);
+    setError('');
+    setSlowServer(false);
+
+    // Show "waking up" message if backend takes > 5 seconds
+    slowTimerRef.current = setTimeout(() => setSlowServer(true), 5000);
+
     try {
       const [pRes, rRes, relRes] = await Promise.all([
         api.get(`/products/${id}`),
@@ -48,6 +58,8 @@ export default function ProductDetail() {
     } catch (err) {
       setError(err.message);
     } finally {
+      clearTimeout(slowTimerRef.current);
+      setSlowServer(false);
       setLoading(false);
     }
   };
@@ -55,6 +67,8 @@ export default function ProductDetail() {
   useEffect(() => {
     loadAll();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    return () => clearTimeout(slowTimerRef.current);
     /* eslint-disable-next-line */
   }, [id]);
 
@@ -109,8 +123,32 @@ export default function ProductDetail() {
     }
   };
 
-  if (loading) return <div className="page container"><div className="loading">Loading...</div></div>;
-  if (error) return <div className="page container"><div className="alert alert-error">{error}</div></div>;
+  // ============ LOADING ============
+  if (loading) {
+    return (
+      <LoadingScreen
+        message={
+          slowServer
+            ? 'Waking up server… (first load can take 30 seconds)'
+            : 'Loading product…'
+        }
+      />
+    );
+  }
+
+  // ============ ERROR ============
+  if (error) {
+    return (
+      <div className="page container">
+        <div className="alert alert-error">{error}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={loadAll}>Try Again</button>
+          <Link to="/products" className="btn btn-outline">Back to Products</Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!product) return null;
 
   const outOfStock = product.stock === 0;

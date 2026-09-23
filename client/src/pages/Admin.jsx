@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import api from '../api/client';
+import { useToast } from '../context/ToastContext';
+import LoadingScreen from '../components/LoadingScreen';
 
 const emptyForm = {
   name: '', description: '', price: '', category: '', stock: '',
@@ -8,23 +10,51 @@ const emptyForm = {
 };
 
 export default function Admin() {
+  const toast = useToast();
+
   const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [slowServer, setSlowServer] = useState(false);
+  const slowTimerRef = useRef(null);
+
+  const [tab, setTab] = useState('products');
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState('products');
-  const [orders, setOrders] = useState([]);
-  const [stats, setStats] = useState(null);
+
+  const loadAll = async () => {
+    setLoading(true);
+    setError('');
+    setSlowServer(false);
+
+    slowTimerRef.current = setTimeout(() => setSlowServer(true), 5000);
+
+    try {
+      const [pRes, oRes, sRes] = await Promise.all([
+        api.get('/products', { params: { sort: 'newest' } }),
+        api.get('/orders'),
+        api.get('/admin/stats').catch(() => ({ data: { data: null } })),
+      ]);
+      setProducts(pRes.data.data);
+      setOrders(oRes.data.data);
+      setStats(sRes.data.data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      clearTimeout(slowTimerRef.current);
+      setSlowServer(false);
+      setLoading(false);
+    }
+  };
 
   const loadProducts = async () => {
-    setLoading(true);
     try {
       const res = await api.get('/products', { params: { sort: 'newest' } });
       setProducts(res.data.data);
     } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
   };
 
   const loadOrders = async () => {
@@ -38,13 +68,12 @@ export default function Admin() {
     try {
       const res = await api.get('/admin/stats');
       setStats(res.data.data);
-    } catch (err) { /* stats optional */ }
+    } catch { /* stats optional */ }
   };
 
   useEffect(() => {
-    loadProducts();
-    loadOrders();
-    loadStats();
+    loadAll();
+    return () => clearTimeout(slowTimerRef.current);
   }, []);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -77,7 +106,7 @@ export default function Admin() {
     try {
       const cleanImages = form.images.map((s) => s.trim()).filter(Boolean);
       if (cleanImages.length === 0) {
-        setError('At least one image URL is required');
+        toast.error('At least one image URL is required');
         setSaving(false);
         return;
       }
@@ -92,14 +121,19 @@ export default function Admin() {
         featured: !!form.featured,
       };
 
-      if (editingId) await api.put(`/products/${editingId}`, payload);
-      else await api.post('/products', payload);
+      if (editingId) {
+        await api.put(`/products/${editingId}`, payload);
+        toast.success('Product updated');
+      } else {
+        await api.post('/products', payload);
+        toast.success('Product created');
+      }
 
       resetForm();
-      await loadProducts();
-      await loadStats();
+      await Promise.all([loadProducts(), loadStats()]);
     } catch (err) {
       setError(err.message);
+      toast.error(err.message);
     } finally {
       setSaving(false);
     }
@@ -123,18 +157,48 @@ export default function Admin() {
     if (!confirm('Delete this product?')) return;
     try {
       await api.delete(`/products/${id}`);
-      await loadProducts();
-      await loadStats();
-    } catch (err) { setError(err.message); }
+      toast.success('Product deleted');
+      await Promise.all([loadProducts(), loadStats()]);
+    } catch (err) {
+      setError(err.message);
+      toast.error(err.message);
+    }
   };
 
   const handleStatusChange = async (orderId, status) => {
     try {
       await api.put(`/orders/${orderId}/status`, { status });
-      await loadOrders();
-      await loadStats();
-    } catch (err) { setError(err.message); }
+      toast.success(`Order #${orderId} → ${status}`);
+      await Promise.all([loadOrders(), loadStats()]);
+    } catch (err) {
+      setError(err.message);
+      toast.error(err.message);
+    }
   };
+
+  // ============ LOADING ============
+  if (loading) {
+    return (
+      <LoadingScreen
+        message={
+          slowServer
+            ? 'Waking up server… (first load can take 30 seconds)'
+            : 'Loading dashboard…'
+        }
+      />
+    );
+  }
+
+  // ============ ERROR ============
+  if (error && !products.length && !orders.length) {
+    return (
+      <div className="page container">
+        <h1 className="page-title">Admin Dashboard</h1>
+        <div className="alert alert-error">{error}</div>
+        <button className="btn btn-primary" onClick={loadAll}>Try Again</button>
+      </div>
+    );
+  }
 
   return (
     <div className="page container">
@@ -277,47 +341,43 @@ export default function Admin() {
             </div>
           </form>
 
-          {loading ? (
-            <div className="loading">Loading...</div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
-                    <th style={{ padding: 12 }}>Img</th>
-                    <th style={{ padding: 12 }}>ID</th>
-                    <th style={{ padding: 12 }}>Name</th>
-                    <th style={{ padding: 12 }}>Category</th>
-                    <th style={{ padding: 12 }}>Price</th>
-                    <th style={{ padding: 12 }}>Stock</th>
-                    <th style={{ padding: 12 }}>Actions</th>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+                  <th style={{ padding: 12 }}>Img</th>
+                  <th style={{ padding: 12 }}>ID</th>
+                  <th style={{ padding: 12 }}>Name</th>
+                  <th style={{ padding: 12 }}>Category</th>
+                  <th style={{ padding: 12 }}>Price</th>
+                  <th style={{ padding: 12 }}>Stock</th>
+                  <th style={{ padding: 12 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => (
+                  <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: 12 }}>
+                      <div className="image-preview" style={{ width: 40, height: 40 }}>
+                        {p.images?.[0] ? <img src={p.images[0]} alt="" /> : '📦'}
+                      </div>
+                    </td>
+                    <td style={{ padding: 12 }}>#{p.id}</td>
+                    <td style={{ padding: 12 }}>{p.name}</td>
+                    <td style={{ padding: 12 }} className="muted">{p.category}</td>
+                    <td style={{ padding: 12 }}>${p.price.toFixed(2)}</td>
+                    <td style={{ padding: 12 }}>{p.stock}</td>
+                    <td style={{ padding: 12 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-outline btn-sm" onClick={() => handleEdit(p)}>Edit</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id)}>Delete</button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {products.map((p) => (
-                    <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: 12 }}>
-                        <div className="image-preview" style={{ width: 40, height: 40 }}>
-                          {p.images?.[0] ? <img src={p.images[0]} alt="" /> : '📦'}
-                        </div>
-                      </td>
-                      <td style={{ padding: 12 }}>#{p.id}</td>
-                      <td style={{ padding: 12 }}>{p.name}</td>
-                      <td style={{ padding: 12 }} className="muted">{p.category}</td>
-                      <td style={{ padding: 12 }}>${p.price.toFixed(2)}</td>
-                      <td style={{ padding: 12 }}>{p.stock}</td>
-                      <td style={{ padding: 12 }}>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-outline btn-sm" onClick={() => handleEdit(p)}>Edit</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 

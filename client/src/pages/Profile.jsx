@@ -3,14 +3,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import LoadingScreen from '../components/LoadingScreen';
 
 export default function Profile() {
   const { user, logout } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState('info'); // 'info' | 'password' | 'stats'
+  const [tab, setTab] = useState('info'); // 'info' | 'password'
   const [stats, setStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   // Profile form
   const [form, setForm] = useState({ name: '', phone: '', address: '' });
@@ -28,13 +30,15 @@ export default function Profile() {
         address: user.address || '',
       });
     }
+
     api.get('/orders/my')
       .then((res) => {
         const orders = res.data.data;
         const totalSpent = orders.reduce((s, o) => s + o.totalAmount, 0);
         setStats({ orders: orders.length, totalSpent: totalSpent.toFixed(2) });
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingStats(false));
   }, [user]);
 
   const handleProfileSave = async (e) => {
@@ -43,10 +47,8 @@ export default function Profile() {
     try {
       await api.put('/auth/profile', form);
       toast.success('Profile updated');
-      // Reload user data by fetching /auth/me
-      const res = await api.get('/auth/me');
-      // Update AuthContext user via re-login would need extra work; simplest: reload
-      window.location.reload();
+      // Reload page so AuthContext picks up the new user data
+      setTimeout(() => window.location.reload(), 600);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -85,10 +87,14 @@ export default function Profile() {
     navigate('/');
   };
 
-  if (!user) return null;
+  // ============ LOADING (only if user is missing) ============
+  if (!user) {
+    return <LoadingScreen message="Loading profile…" />;
+  }
 
   return (
     <div className="page container">
+      {/* Header */}
       <div className="profile-header">
         <div className="profile-avatar">
           {user.name?.[0]?.toUpperCase() || '?'}
@@ -102,7 +108,14 @@ export default function Profile() {
         <button className="btn btn-outline btn-sm" onClick={handleLogout}>Logout</button>
       </div>
 
-      {stats && (
+      {/* Stats */}
+      {loadingStats ? (
+        <div className="profile-stats">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="skeleton" style={{ height: 88, borderRadius: 14 }} />
+          ))}
+        </div>
+      ) : stats ? (
         <div className="profile-stats">
           <div className="profile-stat">
             <div className="profile-stat-value">{stats.orders}</div>
@@ -121,8 +134,9 @@ export default function Profile() {
             <div className="profile-stat-label">Wishlist</div>
           </Link>
         </div>
-      )}
+      ) : null}
 
+      {/* Tabs */}
       <div className="profile-tabs">
         <button className={`profile-tab ${tab === 'info' ? 'active' : ''}`} onClick={() => setTab('info')}>
           Personal Info
@@ -132,6 +146,7 @@ export default function Profile() {
         </button>
       </div>
 
+      {/* Info tab */}
       {tab === 'info' && (
         <form className="form-card" style={{ margin: 0, maxWidth: 520 }} onSubmit={handleProfileSave}>
           <div className="field">
@@ -144,7 +159,11 @@ export default function Profile() {
           </div>
           <div className="field">
             <label>Phone</label>
-            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+880 1XXX XXXXXX" />
+            <input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="+880 1XXX XXXXXX"
+            />
           </div>
           <div className="field">
             <label>Shipping Address</label>
@@ -161,6 +180,7 @@ export default function Profile() {
         </form>
       )}
 
+      {/* Password tab */}
       {tab === 'password' && (
         <form className="form-card" style={{ margin: 0, maxWidth: 520 }} onSubmit={handlePasswordSave}>
           <div className="field">

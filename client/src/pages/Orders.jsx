@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client';
+import LoadingScreen from '../components/LoadingScreen';
 
 const statusColors = {
   pending: '#f59e0b',
@@ -15,16 +16,39 @@ export default function Orders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadOrders = () => {
+    setLoading(true);
+    setError('');
     api.get('/orders/my')
       .then((res) => setOrders(res.data.data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadOrders();
   }, []);
 
-  if (loading) return <div className="page container"><div className="loading">Loading orders...</div></div>;
-  if (error) return <div className="page container"><div className="alert alert-error">{error}</div></div>;
+  // ============ LOADING ============
+  if (loading) {
+    return <LoadingScreen message="Loading your orders…" />;
+  }
 
+  // ============ ERROR ============
+  if (error) {
+    return (
+      <div className="page container">
+        <h1 className="page-title">My Orders</h1>
+        <div className="alert alert-error">{error}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={loadOrders}>Try Again</button>
+          <Link to="/products" className="btn btn-outline">Browse Products</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ============ EMPTY ============
   if (orders.length === 0) {
     return (
       <div className="page container">
@@ -38,9 +62,17 @@ export default function Orders() {
     );
   }
 
+  // ============ LIST ============
   return (
     <div className="page container">
-      <h1 className="page-title">My Orders ({orders.length})</h1>
+      <div className="cart-header">
+        <div>
+          <h1 className="page-title" style={{ marginBottom: 4 }}>My Orders</h1>
+          <p className="muted" style={{ fontSize: '0.9rem' }}>
+            {orders.length} order{orders.length !== 1 ? 's' : ''} placed
+          </p>
+        </div>
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {orders.map((o) => (

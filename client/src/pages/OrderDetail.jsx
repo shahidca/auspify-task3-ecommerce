@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import api from '../api/client';
 import OrderTimeline from '../components/OrderTimeline';
+import LoadingScreen from '../components/LoadingScreen';
 
 const statusColors = {
   pending: '#f59e0b',
@@ -19,18 +20,63 @@ export default function OrderDetail() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [slowServer, setSlowServer] = useState(false);
+  const slowTimerRef = useRef(null);
 
-  useEffect(() => {
+  const loadOrder = () => {
+    setLoading(true);
+    setError('');
+    setSlowServer(false);
+
+    slowTimerRef.current = setTimeout(() => setSlowServer(true), 5000);
+
     api.get(`/orders/${id}`)
       .then((res) => setOrder(res.data.data))
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        clearTimeout(slowTimerRef.current);
+        setSlowServer(false);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    loadOrder();
+    return () => clearTimeout(slowTimerRef.current);
+    /* eslint-disable-next-line */
   }, [id]);
 
   const handlePrint = () => window.print();
 
-  if (loading) return <div className="page container"><div className="loading">Loading order...</div></div>;
-  if (error) return <div className="page container"><div className="alert alert-error">{error}</div></div>;
+  // ============ LOADING ============
+  if (loading) {
+    return (
+      <LoadingScreen
+        message={
+          slowServer
+            ? 'Waking up server… (first load can take 30 seconds)'
+            : 'Loading your order…'
+        }
+      />
+    );
+  }
+
+  // ============ ERROR ============
+  if (error) {
+    return (
+      <div className="page container">
+        <Link to="/orders" className="muted" style={{ display: 'inline-block', marginBottom: 20, fontSize: '0.9rem' }}>
+          ← Back to orders
+        </Link>
+        <div className="alert alert-error">{error}</div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={loadOrder}>Try Again</button>
+          <Link to="/orders" className="btn btn-outline">All Orders</Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!order) return null;
 
   const subtotal = order.items.reduce((s, i) => s + i.price * i.quantity, 0);
