@@ -1,0 +1,74 @@
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useWishlist } from '../context/WishlistContext';
+import { useToast } from '../context/ToastContext';
+
+export default function ProductCard({ product }) {
+  const outOfStock = product.stock === 0;
+  const cover = product.images?.[0];
+  const [imgFailed, setImgFailed] = useState(false);
+  const { user } = useAuth();
+  const { has, toggle } = useWishlist();
+  const toast = useToast();
+  const navigate = useNavigate();
+
+  const liked = has(product.id);
+
+  const handleWishlist = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) {
+      toast.info('Please log in to save items');
+      navigate('/login');
+      return;
+    }
+    try {
+      const added = await toggle(product.id);
+      toast.success(added ? 'Added to wishlist' : 'Removed from wishlist');
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  return (
+    <Link to={`/products/${product.id}`} className="product-card">
+      <div className="product-image">
+        {cover && !imgFailed ? (
+          <img src={cover} alt={product.name} loading="lazy" onError={() => setImgFailed(true)} />
+        ) : (
+          <div className="product-image-placeholder">
+            <span style={{ fontSize: '3rem' }}>📦</span>
+            <span style={{ fontSize: '0.7rem', marginTop: 4, opacity: 0.6 }}>{product.category}</span>
+          </div>
+        )}
+
+        <button
+          className={`wishlist-btn ${liked ? 'active' : ''}`}
+          onClick={handleWishlist}
+          aria-label={liked ? 'Remove from wishlist' : 'Add to wishlist'}
+        >
+          {liked ? '♥' : '♡'}
+        </button>
+
+        {outOfStock && <span className="product-badge">Out of Stock</span>}
+        {!outOfStock && product.stock < 5 && (
+          <span className="product-badge low">Only {product.stock} left</span>
+        )}
+        {product.ratingAverage > 0 && (
+          <span className="product-badge" style={{ left: 'auto', right: 10, background: 'rgba(0,0,0,0.75)' }}>
+            ⭐ {product.ratingAverage} ({product.reviewCount})
+          </span>
+        )}
+      </div>
+
+      <div className="product-body">
+        <span className="product-category">{product.category}</span>
+        <h3 className="product-name">{product.name}</h3>
+        <div className="product-footer">
+          <span className="product-price">${product.price.toFixed(2)}</span>
+        </div>
+      </div>
+    </Link>
+  );
+}

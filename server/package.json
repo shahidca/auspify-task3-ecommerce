@@ -1,0 +1,32 @@
+{
+  "name": "ecommerce-server",
+  "version": "1.0.0",
+  "description": "Backend for E-Commerce Website",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon --watch . --ignore node_modules --ignore .env --ext js,json server.js",
+    "start": "node server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "seed": "node prisma/seed.js"
+  },
+  "author": "Md. Shahid Hossain",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "passport": "^0.7.0",
+    "passport-github2": "^0.1.12",
+    "passport-google-oauth20": "^2.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "prisma": "^6.19.3"
+  }
+}
